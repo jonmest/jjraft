@@ -1,0 +1,41 @@
+syntax = "proto3";
+package kv;
+option java_package = "org.jraft.kv";
+option java_multiple_files = true;
+option java_outer_classname = "KvProto";
+
+message Command {
+  string client_id = 1;
+  int64  op_id     = 2;
+  oneof op {
+    Put put   = 3;
+    Del del   = 4;
+    Cas cas   = 5;
+  }
+}
+
+message Put {
+  string key = 1;
+  bytes  value = 2;
+}
+
+message Del {
+  string key = 1;
+}
+
+message Cas {
+  string key = 1;
+  bytes expected = 2;
+  bytes update   = 3;
+}
+
+message Incr {
+  string key = 1;
+  int64  delta = 2;
+}
+
+message Result {
+  bool   ok        = 1;
+  bytes  value     = 2;
+  string message   = 3;
+}
