@@ -4,11 +4,11 @@ import java.util.*;
 import java.util.Arrays;
 
 import com.google.protobuf.InvalidProtocolBufferException;
-import org.jraft.core.FiniteStateMachine;
+import org.jraft.core.StateMachine;
 import org.jraft.rpc.LogEntry;
 import org.jraft.kv.Command;
 
-public final class KvStateMachine implements FiniteStateMachine {
+public final class KvStateMachine implements StateMachine {
   private static final byte[] EMPTY = new byte[0];
   private record Dedupe(long opId, boolean ok, byte[] value) {}
 

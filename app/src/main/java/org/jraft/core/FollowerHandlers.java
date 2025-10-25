@@ -9,8 +9,8 @@ import org.jraft.rpc.RequestVoteResponse;
 import org.jraft.state.LogStore;
 import org.jraft.state.RaftState;
 
-final class FollowerHandlers {
-  public static AppendEntriesResponse onAppendEntries(FiniteStateMachine fsm, LogStore log, RaftState state, AppendEntriesRequest req) {
+public final class FollowerHandlers {
+  public static AppendEntriesResponse onAppendEntries(StateMachine fsm, LogStore log, RaftState state, AppendEntriesRequest req) {
     // Never accept commands or votes from older terms
     if (state.getCurrentTerm() > req.getTerm()) {
       return AppendEntriesResponse.newBuilder()

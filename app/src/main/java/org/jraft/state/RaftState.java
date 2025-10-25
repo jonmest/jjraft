@@ -27,13 +27,29 @@ public class RaftState {
   public void setVotedFor(String votedFor) { this.votedFor = votedFor; }
   public void clearVote() { this.votedFor = null; }
 
-  public void becomeFollower() { this.role = Role.FOLLOWER; }
-  public void becomeCandidate() { this.role = Role.CANDIDATE; }
-  public void becomeLeader() { this.role = Role.LEADER; }
+  public void becomeFollower() { 
+    this.role = Role.FOLLOWER; 
+    this.leaderId = null;
+  }
+  public void becomeCandidate() { 
+    this.role = Role.CANDIDATE;
+    this.leaderId = null; 
+  }
+  
+  public void becomeLeader() { 
+    this.role = Role.LEADER;
+ }
+
+  /**
+   * Set the role. Subclasses can override to mirror the role into their own fields.
+   */
+  public void setRole(Role r) { this.role = r; }
 
   public long getCommitIndex() { return this.commitIndex; }
   public void setCommitIndex(long index) { this.commitIndex = index; }
 
   public String getLeader() { return this.leaderId; }
   public void setLeader(String leaderId) { this.leaderId = leaderId; }
+
+  public Role getRole() { return this.role; }
 }
