@@ -37,7 +37,7 @@ public class RaftNode {
   private static final long HEARTBEAT_PERIOD_MS = 100;
 
   private static final long MIN_ELECTION_MS = 250;
-  private static final long MAX_ELECTION_MS = 500;
+  private static final long MAX_ELECTION_MS = 1000;
   private final AtomicInteger electionResetProbe = new AtomicInteger();
 
   private int votesGranted = 0;
@@ -92,7 +92,6 @@ public class RaftNode {
     }
   }
 
-  private int quorum() { return peers.size() / 2 + 1; }
   private int majority() { return (peers.size() + 1) / 2 + 1;}
 
   private void stepDown(long newTerm) {
@@ -282,5 +281,10 @@ public class RaftNode {
     return index;
   }
 
+  // --- accessors for testing ---
+
+  public RaftState getRaftState() { return raftState; }
+  public LogStore getLog() { return log; }
+  public StateMachine getStateMachine() { return stateMachine; }
 
 }

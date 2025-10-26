@@ -1,21 +1,15 @@
 package org.jraft.state;
 
-import java.util.Map;
-
 
 public class RaftState {
-  long currentTerm = 0;
+  protected long currentTerm = 0;
   public enum Role { FOLLOWER, CANDIDATE, LEADER; }
-  String votedFor = null;
-  //final LogStore log = new InMemoryLog();
-  long commitIndex = 0;
-  long lastApplied = 0;
+  protected String votedFor = null;
+  protected long commitIndex = 0;
+  protected long lastApplied = 0;
 
-  Map<String, Long> nextIndex = Map.of();   // followerId -> next index to send
-  Map<String, Long> matchIndex = Map.of();  // followerId -> highest known replicated index
-
-  Role role = Role.FOLLOWER;
-  String leaderId = null;
+  protected Role role = Role.FOLLOWER;
+  protected String leaderId = null;
 
   public long getCurrentTerm() { return this.currentTerm; }
   public void setCurrentTerm(long term) { this.currentTerm = term; }

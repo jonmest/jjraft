@@ -41,13 +41,12 @@ public final class KvStateMachine implements StateMachine {
         byte[] data = cmd.getPut().getValue().toByteArray();
         store.put(key, data);
         ok = true;
-        value = data; // intentionally echo stored value
+        value = data; 
       }
       case DEL -> {
         String key = cmd.getDel().getKey();
         store.remove(key);
         ok = true;
-        // value stays EMPTY for now
       }
       case CAS -> {
         String key = cmd.getCas().getKey();
@@ -55,7 +54,7 @@ public final class KvStateMachine implements StateMachine {
         byte[] update   = cmd.getCas().getUpdate().toByteArray();
         byte[] current  = store.get(key);
 
-        // Semantics: missing (null) != empty bytes; only match if both null or bytes equal
+        // semantics  missing (null) != empty bytes; only match if both null or bytes equal
         boolean matches = (current == null && expected.length == 0)
                        || (current != null && Arrays.equals(current, expected));
 

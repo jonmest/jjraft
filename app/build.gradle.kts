@@ -39,6 +39,8 @@ java {
 }
 
 dependencies {
+    implementation("com.google.code.gson:gson:2.10.1")
+
     implementation("io.grpc:grpc-netty-shaded:$grpcVersion")
     implementation("io.grpc:grpc-protobuf:$grpcVersion")
     implementation("io.grpc:grpc-stub:$grpcVersion")
@@ -70,5 +72,5 @@ protobuf {
 
 application {
     // Define the main class for the application.
-    mainClass = "org.jraft.App"
+    mainClass = "org.jraft.viz.VisualizerDemo"
 }

@@ -1,0 +1,1128 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Raft Cluster Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .cluster-info {
+            display: flex;
+            gap: 30px;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .cluster-info span {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .status-indicator {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #4caf50;
+        }
+
+        .nodes-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .node-card {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            transition: transform 0.2s;
+        }
+
+        .node-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+
+        .node-card.leader {
+            border: 2px solid #2196F3;
+        }
+
+        .node-card.candidate {
+            border: 2px solid #FF9800;
+        }
+
+        .node-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .node-name {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        .role-badge {
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .role-badge.leader {
+            background: #E3F2FD;
+            color: #1976D2;
+        }
+
+        .role-badge.follower {
+            background: #F5F5F5;
+            color: #757575;
+        }
+
+        .role-badge.candidate {
+            background: #FFF3E0;
+            color: #F57C00;
+        }
+
+        .node-stats {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 15px;
+        }
+
+        .stat {
+            font-size: 13px;
+        }
+
+        .stat-label {
+            color: #999;
+            display: block;
+            margin-bottom: 4px;
+        }
+
+        .stat-value {
+            color: #333;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        .log-progress {
+            margin-top: 15px;
+        }
+
+        .log-progress-label {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 8px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .progress-bar {
+            height: 24px;
+            background: #f0f0f0;
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-segment {
+            height: 100%;
+            float: left;
+            transition: width 0.3s ease;
+        }
+
+        .progress-applied {
+            background: #4CAF50;
+        }
+
+        .progress-committed {
+            background: #8BC34A;
+        }
+
+        .progress-uncommitted {
+            background: #E0E0E0;
+        }
+
+        .replication-info {
+            margin-top: 15px;
+            padding-top: 15px;
+            border-top: 1px solid #eee;
+        }
+
+        .replication-header {
+            font-size: 12px;
+            color: #999;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }
+
+        .peer-status {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            font-size: 13px;
+        }
+
+        .peer-name {
+            color: #666;
+        }
+
+        .peer-progress {
+            color: #4CAF50;
+            font-weight: 600;
+        }
+
+        .topology-view {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .topology-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            color: #333;
+        }
+
+        .topology-diagram {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .topology-leader {
+            text-align: center;
+        }
+
+        .topology-node {
+            padding: 15px 25px;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .topology-node.leader {
+            background: #2196F3;
+            color: white;
+            border: 2px solid #1976D2;
+        }
+
+        .topology-node.follower {
+            background: #F5F5F5;
+            color: #333;
+            border: 2px solid #E0E0E0;
+        }
+
+        .topology-connections {
+            width: 2px;
+            height: 40px;
+            background: #ddd;
+            position: relative;
+        }
+
+        .topology-followers {
+            display: flex;
+            gap: 30px;
+            justify-content: center;
+        }
+
+        .error-message {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .legend {
+            display: flex;
+            gap: 20px;
+            font-size: 12px;
+            margin-top: 10px;
+        }
+
+        .legend-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .legend-color {
+            width: 16px;
+            height: 16px;
+            border-radius: 2px;
+        }
+
+        /* command submission section */
+        .command-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .section-title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .command-form {
+            display: grid;
+            grid-template-columns: auto 1fr 1fr auto;
+            gap: 10px;
+            align-items: end;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+
+        .form-group label {
+            font-size: 13px;
+            color: #666;
+            font-weight: 500;
+        }
+
+        .form-group input,
+        .form-group select {
+            padding: 8px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #2196F3;
+        }
+
+        .submit-btn {
+            padding: 8px 20px;
+            background: #2196F3;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .submit-btn:hover {
+            background: #1976D2;
+        }
+
+        .submit-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+
+        .response-message {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+
+        .response-message.success {
+            background: #e8f5e9;
+            color: #2e7d32;
+        }
+
+        .response-message.error {
+            background: #ffebee;
+            color: #c62828;
+        }
+
+        /* KV store section */
+        .kv-store-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .kv-stores-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+
+        .kv-store-card {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 15px;
+        }
+
+        .kv-store-card.leader-store {
+            border-color: #2196F3;
+            background: #e3f2fd;
+        }
+
+        .kv-store-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #ddd;
+        }
+
+        .kv-store-name {
+            font-weight: 600;
+            font-size: 14px;
+        }
+
+        .leader-badge {
+            background: #2196F3;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 3px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .kv-entries {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .kv-entry {
+            display: grid;
+            grid-template-columns: 1fr 2fr;
+            gap: 10px;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+            font-size: 13px;
+        }
+
+        .kv-entry:last-child {
+            border-bottom: none;
+        }
+
+        .kv-key {
+            font-weight: 600;
+            color: #333;
+            word-break: break-word;
+        }
+
+        .kv-value {
+            color: #666;
+            font-family: 'Courier New', monospace;
+            word-break: break-word;
+        }
+
+        .empty-store {
+            text-align: center;
+            color: #999;
+            padding: 20px;
+            font-size: 13px;
+        }
+
+        /* term timeline section */
+        .term-timeline-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+
+        .timeline-container {
+            position: relative;
+            height: 200px;
+            margin-top: 20px;
+            padding: 20px 0;
+        }
+
+        .timeline-axis {
+            position: absolute;
+            bottom: 40px;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: #ddd;
+        }
+
+        .timeline-points {
+            position: absolute;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            top: 0;
+        }
+
+        .timeline-point {
+            position: absolute;
+            bottom: 30px;
+            transform: translateX(-50%);
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .timeline-point:hover {
+            transform: translateX(-50%) scale(1.1);
+        }
+
+        .timeline-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #2196F3;
+            border: 2px solid white;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            position: relative;
+        }
+
+        .timeline-dot.election {
+            background: #ff9800;
+            animation: pulse 1s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        .timeline-label {
+            position: absolute;
+            top: -30px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 11px;
+            font-weight: 600;
+            color: #333;
+            white-space: nowrap;
+        }
+
+        .timeline-leader {
+            position: absolute;
+            top: -50px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 10px;
+            color: #2196F3;
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        .timeline-time {
+            position: absolute;
+            bottom: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 9px;
+            color: #999;
+            white-space: nowrap;
+        }
+
+        .timeline-stats {
+            display: flex;
+            gap: 30px;
+            margin-bottom: 15px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 6px;
+            font-size: 13px;
+        }
+
+        .timeline-stat {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .timeline-stat-label {
+            color: #666;
+        }
+
+        .timeline-stat-value {
+            font-weight: 600;
+            color: #333;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>Raft Cluster Visualization</h1>
+            <div class="cluster-info">
+                <span>
+                    <div class="status-indicator"></div>
+                    <span>Term <strong id="current-term">0</strong></span>
+                </span>
+                <span>Leader: <strong id="current-leader">none</strong></span>
+                <span>Nodes: <strong id="node-count">0</strong></span>
+            </div>
+        </header>
+
+        <div id="error-container"></div>
+
+        <div class="nodes-container" id="nodes-container">
+            <!-- Nodes will be inserted here -->
+        </div>
+
+        <!-- Term Timeline Section -->
+        <div class="term-timeline-section">
+            <div class="section-title">Term Progression Timeline</div>
+            <div class="timeline-stats">
+                <div class="timeline-stat">
+                    <span class="timeline-stat-label">Current Term:</span>
+                    <span class="timeline-stat-value" id="timeline-current-term">0</span>
+                </div>
+                <div class="timeline-stat">
+                    <span class="timeline-stat-label">Total Elections:</span>
+                    <span class="timeline-stat-value" id="timeline-elections">0</span>
+                </div>
+                <div class="timeline-stat">
+                    <span class="timeline-stat-label">Leader Changes:</span>
+                    <span class="timeline-stat-value" id="timeline-leader-changes">0</span>
+                </div>
+                <div class="timeline-stat">
+                    <span class="timeline-stat-label">Uptime:</span>
+                    <span class="timeline-stat-value" id="timeline-uptime">0s</span>
+                </div>
+            </div>
+            <div class="timeline-container">
+                <div class="timeline-axis"></div>
+                <div class="timeline-points" id="timeline-points">
+                    <!-- Timeline points will be inserted here -->
+                </div>
+            </div>
+        </div>
+
+        <div class="topology-view">
+            <div class="topology-title">Cluster Topology</div>
+            <div id="topology-diagram" class="topology-diagram">
+                <!-- Topology will be rendered here -->
+            </div>
+        </div>
+
+        <!-- Command Submission Section -->
+        <div class="command-section">
+            <div class="section-title">Submit Command</div>
+            <form class="command-form" id="command-form">
+                <div class="form-group">
+                    <label for="operation">Operation</label>
+                    <select id="operation" name="operation" required>
+                        <option value="put">PUT</option>
+                        <option value="del">DELETE</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="key">Key</label>
+                    <input type="text" id="key" name="key" placeholder="Enter key" required>
+                </div>
+                <div class="form-group" id="value-group">
+                    <label for="value">Value</label>
+                    <input type="text" id="value" name="value" placeholder="Enter value">
+                </div>
+                <button type="submit" class="submit-btn">Submit</button>
+            </form>
+            <div id="response-message"></div>
+        </div>
+
+        <!-- KV Store State Section -->
+        <div class="kv-store-section">
+            <div class="section-title">Key-Value Store State</div>
+            <div id="kv-stores-grid" class="kv-stores-grid">
+                <!-- KV stores will be rendered here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/cluster';
+        let updateInterval;
+
+        // Term history tracking
+        const termHistory = [];
+        const startTime = Date.now();
+        let lastTerm = 0;
+        let lastLeader = null;
+        let electionCount = 0;
+        let leaderChangeCount = 0;
+
+        function formatPercentage(value) {
+            return Math.round(value * 100) + '%';
+        }
+
+        function updateCluster(data) {
+            // Track term changes
+            trackTermChange(data.term, data.leader);
+
+            // Update header
+            document.getElementById('current-term').textContent = data.term;
+            document.getElementById('current-leader').textContent = data.leader || 'none';
+            document.getElementById('node-count').textContent = data.nodes.length;
+
+            // Update nodes
+            const container = document.getElementById('nodes-container');
+            container.innerHTML = '';
+
+            data.nodes.forEach(node => {
+                const card = createNodeCard(node);
+                container.appendChild(card);
+            });
+
+            // Update topology
+            updateTopology(data);
+        }
+
+        function createNodeCard(node) {
+            const card = document.createElement('div');
+            card.className = `node-card ${node.role.toLowerCase()}`;
+
+            const roleClass = node.role.toLowerCase();
+
+            let replicationHtml = '';
+            if (node.role === 'LEADER' && node.replication) {
+                replicationHtml = `
+                    <div class="replication-info">
+                        <div class="replication-header">REPLICATION STATUS</div>
+                        ${Object.entries(node.replication).map(([peer, status]) => `
+                            <div class="peer-status">
+                                <span class="peer-name">${peer}</span>
+                                <span class="peer-progress">${formatPercentage(status.progress)}</span>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+            }
+
+            const appliedWidth = node.log.lastIndex > 0
+                ? (node.log.lastApplied / node.log.lastIndex * 100)
+                : 0;
+            const committedWidth = node.log.lastIndex > 0
+                ? (node.log.commitIndex / node.log.lastIndex * 100)
+                : 0;
+
+            card.innerHTML = `
+                <div class="node-header">
+                    <div class="node-name">${node.id}</div>
+                    <div class="role-badge ${roleClass}">${node.role}</div>
+                </div>
+                <div class="node-stats">
+                    <div class="stat">
+                        <span class="stat-label">Term</span>
+                        <span class="stat-value">${node.term}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Last Index</span>
+                        <span class="stat-value">${node.log.lastIndex}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Commit Index</span>
+                        <span class="stat-value">${node.log.commitIndex}</span>
+                    </div>
+                    <div class="stat">
+                        <span class="stat-label">Last Applied</span>
+                        <span class="stat-value">${node.log.lastApplied}</span>
+                    </div>
+                </div>
+                ${node.votedFor ? `
+                    <div class="stat">
+                        <span class="stat-label">Voted For</span>
+                        <span class="stat-value">${node.votedFor}</span>
+                    </div>
+                ` : ''}
+                <div class="log-progress">
+                    <div class="log-progress-label">
+                        <span>Log Progress</span>
+                    </div>
+                    <div class="progress-bar">
+                        <div class="progress-segment progress-applied" style="width: ${appliedWidth}%"></div>
+                        <div class="progress-segment progress-committed" style="width: ${committedWidth - appliedWidth}%"></div>
+                        <div class="progress-segment progress-uncommitted" style="width: ${100 - committedWidth}%"></div>
+                    </div>
+                    <div class="legend">
+                        <div class="legend-item">
+                            <div class="legend-color progress-applied"></div>
+                            <span>Applied</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color progress-committed"></div>
+                            <span>Committed</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color progress-uncommitted"></div>
+                            <span>Uncommitted</span>
+                        </div>
+                    </div>
+                </div>
+                ${replicationHtml}
+            `;
+
+            return card;
+        }
+
+        function updateTopology(data) {
+            const container = document.getElementById('topology-diagram');
+            container.innerHTML = '';
+
+            const leaderNode = data.nodes.find(n => n.role === 'LEADER');
+            const followerNodes = data.nodes.filter(n => n.role === 'FOLLOWER');
+
+            if (leaderNode) {
+                const leaderDiv = document.createElement('div');
+                leaderDiv.className = 'topology-leader';
+                leaderDiv.innerHTML = `
+                    <div class="topology-node leader">${leaderNode.id}</div>
+                `;
+                container.appendChild(leaderDiv);
+
+                if (followerNodes.length > 0) {
+                    const connections = document.createElement('div');
+                    connections.className = 'topology-connections';
+                    container.appendChild(connections);
+
+                    const followersDiv = document.createElement('div');
+                    followersDiv.className = 'topology-followers';
+                    followerNodes.forEach(follower => {
+                        const node = document.createElement('div');
+                        node.className = 'topology-node follower';
+                        node.textContent = follower.id;
+                        followersDiv.appendChild(node);
+                    });
+                    container.appendChild(followersDiv);
+                }
+            } else {
+                const noLeader = document.createElement('div');
+                noLeader.style.textAlign = 'center';
+                noLeader.style.color = '#999';
+                noLeader.textContent = 'No leader elected';
+                container.appendChild(noLeader);
+
+                if (data.nodes.length > 0) {
+                    const nodesDiv = document.createElement('div');
+                    nodesDiv.className = 'topology-followers';
+                    nodesDiv.style.marginTop = '20px';
+                    data.nodes.forEach(node => {
+                        const nodeDiv = document.createElement('div');
+                        nodeDiv.className = 'topology-node follower';
+                        nodeDiv.textContent = node.id;
+                        nodesDiv.appendChild(nodeDiv);
+                    });
+                    container.appendChild(nodesDiv);
+                }
+            }
+        }
+
+        function showError(message) {
+            const container = document.getElementById('error-container');
+            container.innerHTML = `<div class="error-message">${message}</div>`;
+        }
+
+        function clearError() {
+            document.getElementById('error-container').innerHTML = '';
+        }
+
+        // Term tracking and timeline functions
+        function trackTermChange(currentTerm, currentLeader) {
+            // Track new term
+            if (currentTerm > lastTerm) {
+                const event = {
+                    term: currentTerm,
+                    leader: currentLeader,
+                    timestamp: Date.now(),
+                    isElection: true
+                };
+                termHistory.push(event);
+                electionCount++;
+                lastTerm = currentTerm;
+            }
+
+            // Track leader change (same term, different leader)
+            if (currentLeader && currentLeader !== lastLeader && currentTerm === lastTerm) {
+                if (lastLeader !== null) {
+                    leaderChangeCount++;
+                }
+                lastLeader = currentLeader;
+            }
+
+            // Update leader if it's the first time we're seeing one
+            if (currentLeader && lastLeader === null) {
+                lastLeader = currentLeader;
+            }
+
+            updateTimeline();
+        }
+
+        function updateTimeline() {
+            // Update stats
+            document.getElementById('timeline-current-term').textContent = lastTerm;
+            document.getElementById('timeline-elections').textContent = electionCount;
+            document.getElementById('timeline-leader-changes').textContent = leaderChangeCount;
+
+            const uptimeSeconds = Math.floor((Date.now() - startTime) / 1000);
+            document.getElementById('timeline-uptime').textContent = formatUptime(uptimeSeconds);
+
+            // Render timeline
+            renderTimeline();
+        }
+
+        function formatUptime(seconds) {
+            if (seconds < 60) return seconds + 's';
+            const minutes = Math.floor(seconds / 60);
+            const secs = seconds % 60;
+            return `${minutes}m ${secs}s`;
+        }
+
+        function formatTime(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleTimeString('en-US', {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit'
+            });
+        }
+
+        function renderTimeline() {
+            const container = document.getElementById('timeline-points');
+            container.innerHTML = '';
+
+            if (termHistory.length === 0) {
+                return;
+            }
+
+            // Calculate positions (limit to last 20 events for readability)
+            const maxEvents = 20;
+            const recentHistory = termHistory.slice(-maxEvents);
+            const containerWidth = container.offsetWidth || 800;
+
+            recentHistory.forEach((event, index) => {
+                const point = document.createElement('div');
+                point.className = 'timeline-point';
+
+                // Position based on index
+                const position = (index / Math.max(1, recentHistory.length - 1)) * 100;
+                point.style.left = position + '%';
+
+                const dot = document.createElement('div');
+                dot.className = 'timeline-dot';
+                if (event.isElection) {
+                    dot.classList.add('election');
+                }
+
+                const label = document.createElement('div');
+                label.className = 'timeline-label';
+                label.textContent = `Term ${event.term}`;
+
+                const leader = document.createElement('div');
+                leader.className = 'timeline-leader';
+                leader.textContent = event.leader || 'no leader';
+
+                const time = document.createElement('div');
+                time.className = 'timeline-time';
+                time.textContent = formatTime(event.timestamp);
+
+                point.appendChild(label);
+                point.appendChild(leader);
+                point.appendChild(dot);
+                point.appendChild(time);
+
+                container.appendChild(point);
+            });
+        }
+
+        async function fetchClusterState() {
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                clearError();
+                updateCluster(data);
+            } catch (error) {
+                showError(`Failed to fetch cluster state: ${error.message}`);
+            }
+        }
+
+        // KV Store functions
+        async function fetchKvState() {
+            try {
+                const response = await fetch('/api/kv');
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}`);
+                }
+                const data = await response.json();
+                updateKvStores(data);
+            } catch (error) {
+                console.error('Failed to fetch KV state:', error);
+            }
+        }
+
+        function updateKvStores(data) {
+            const container = document.getElementById('kv-stores-grid');
+            container.innerHTML = '';
+
+            if (!data.stores || data.stores.length === 0) {
+                container.innerHTML = '<div class="empty-store">No stores available</div>';
+                return;
+            }
+
+            data.stores.forEach(store => {
+                const storeCard = document.createElement('div');
+                storeCard.className = 'kv-store-card' + (store.isLeader ? ' leader-store' : '');
+
+                let entriesHtml = '';
+                if (store.entries && store.entries.length > 0) {
+                    entriesHtml = store.entries.map(entry => `
+                        <div class="kv-entry">
+                            <div class="kv-key">${escapeHtml(entry.key)}</div>
+                            <div class="kv-value">${escapeHtml(entry.value)}</div>
+                        </div>
+                    `).join('');
+                } else {
+                    entriesHtml = '<div class="empty-store">No entries</div>';
+                }
+
+                storeCard.innerHTML = `
+                    <div class="kv-store-header">
+                        <div class="kv-store-name">${store.nodeId}</div>
+                        ${store.isLeader ? '<span class="leader-badge">LEADER</span>' : ''}
+                    </div>
+                    <div class="kv-entries">
+                        ${entriesHtml}
+                    </div>
+                `;
+
+                container.appendChild(storeCard);
+            });
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Command submission
+        document.getElementById('command-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const submitBtn = e.target.querySelector('.submit-btn');
+            const responseDiv = document.getElementById('response-message');
+            const formData = new FormData(e.target);
+
+            const operation = formData.get('operation');
+            const key = formData.get('key');
+            const value = formData.get('value');
+
+            submitBtn.disabled = true;
+            responseDiv.innerHTML = '';
+
+            try {
+                const response = await fetch('/api/commands', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        operation: operation,
+                        key: key,
+                        value: value
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    responseDiv.className = 'response-message success';
+                    responseDiv.textContent = `✓ ${result.message}`;
+
+                    // Clear form
+                    e.target.reset();
+
+                    // Refresh KV state immediately
+                    setTimeout(fetchKvState, 100);
+                } else {
+                    responseDiv.className = 'response-message error';
+                    responseDiv.textContent = `✗ Error: ${result.error}`;
+                }
+            } catch (error) {
+                responseDiv.className = 'response-message error';
+                responseDiv.textContent = `✗ Failed to submit command: ${error.message}`;
+            } finally {
+                submitBtn.disabled = false;
+            }
+        });
+
+        // Toggle value field based on operation
+        document.getElementById('operation').addEventListener('change', (e) => {
+            const valueGroup = document.getElementById('value-group');
+            const valueInput = document.getElementById('value');
+
+            if (e.target.value === 'del') {
+                valueGroup.style.opacity = '0.5';
+                valueInput.required = false;
+                valueInput.disabled = true;
+            } else {
+                valueGroup.style.opacity = '1';
+                valueInput.required = true;
+                valueInput.disabled = false;
+            }
+        });
+
+        // Initial fetch
+        fetchClusterState();
+        fetchKvState();
+
+        // Update every second
+        updateInterval = setInterval(() => {
+            fetchClusterState();
+            fetchKvState();
+        }, 1000);
+    </script>
+</body>
+</html>
