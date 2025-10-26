@@ -1,4 +1,4 @@
-# jraft
+# jjraft
 
 A from-scratch implementation of the Raft consensus algorithm in Java, including a distributed key-value store with full persistence and crash recovery.
 
