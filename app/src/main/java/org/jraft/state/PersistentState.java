@@ -34,13 +34,13 @@ public class PersistentState {
     } catch (IOException e) {
       System.err.println("Failed to read persisted metadata.json.");
       throw e;
-    }  
+    }
   }
 
-  public void save(long term, String votedFor) throws IOException {
+  public synchronized void save(long term, String votedFor) throws IOException {
     this.term = term;
     this.votedFor = votedFor;
-    
+
     // atomic write pattern
     Path tempFile = metadataFile.getParent().resolve("metadata.tmp");
     String json = createJson(term, votedFor);
@@ -74,8 +74,8 @@ public class PersistentState {
     // in production you'd use JNI or accept this trade-off
   }
 
-  public long getCurrentTerm(){ return this.term; }
-  public String getVotedFor() { return this.votedFor; }
+  public synchronized long getCurrentTerm(){ return this.term; }
+  public synchronized String getVotedFor() { return this.votedFor; }
 
   private static record Record(long term, String votedFor){};
 

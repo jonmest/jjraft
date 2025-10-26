@@ -77,7 +77,7 @@ public class VisualizerDemo {
 
     System.out.println("cluster created!\n");
 
-    RaftHttpServer httpServer = new RaftHttpServer(8080, viz);
+    RaftHttpServer httpServer = new RaftHttpServer(8080, viz, transport);
     httpServer.start();
 
     System.out.println("INITIAL STATE:");
@@ -142,11 +142,24 @@ public class VisualizerDemo {
   /**
    * in-memory transport that connects nodes directly without network
    */
-  private static class InMemoryTransport {
+  static class InMemoryTransport {
     private final Map<String, RaftNode> nodes = new HashMap<>();
+    private final java.util.Set<String> partitionedNodes = new java.util.HashSet<>();
 
     public void registerNode(String id, RaftNode node) {
       nodes.put(id, node);
+    }
+
+    public synchronized void partitionNode(String nodeId) {
+      partitionedNodes.add(nodeId);
+    }
+
+    public synchronized void unpartitionNode(String nodeId) {
+      partitionedNodes.remove(nodeId);
+    }
+
+    private synchronized boolean isPartitioned(String nodeId) {
+      return partitionedNodes.contains(nodeId);
     }
 
     public RaftTransport getTransportFor(String sourceId) {
@@ -155,7 +168,17 @@ public class VisualizerDemo {
         public void requestVote(String peerId, RequestVoteRequest req, Consumer<RequestVoteResponse> callback) {
           new Thread(() -> {
             try {
+              // check partition status BEFORE sleep to prevent race condition
+              if (isPartitioned(sourceId) || isPartitioned(peerId)) {
+                // message dropped - network partition
+                return;
+              }
               Thread.sleep(500);
+              // check again AFTER sleep in case partition happened during sleep
+              if (isPartitioned(sourceId) || isPartitioned(peerId)) {
+                // message dropped - network partition
+                return;
+              }
               RaftNode peer = nodes.get(peerId);
               if (peer != null) {
                 RequestVoteResponse response = peer.onRequestVoteRequest(req);
@@ -172,7 +195,17 @@ public class VisualizerDemo {
           // simulate async network call
           new Thread(() -> {
             try {
-              Thread.sleep(500);  // 10ms network delay
+              // check partition status BEFORE sleep to prevent race condition
+              if (isPartitioned(sourceId) || isPartitioned(peerId)) {
+                // message dropped - network partition
+                return;
+              }
+              Thread.sleep(500);  // 500ms network delay
+              // check again AFTER sleep in case partition happened during sleep
+              if (isPartitioned(sourceId) || isPartitioned(peerId)) {
+                // message dropped - network partition
+                return;
+              }
               RaftNode peer = nodes.get(peerId);
               if (peer != null) {
                 AppendEntriesResponse response = peer.onAppendEntriesRequest(req);

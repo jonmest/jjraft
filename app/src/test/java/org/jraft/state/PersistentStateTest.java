@@ -56,6 +56,7 @@ public class PersistentStateTest {
     state.save(2, "node-2");
     state.save(3, "node-3");
 
+
     PersistentState loaded = PersistentState.load(tempDir);
     assertEquals(3, loaded.getCurrentTerm());
     assertEquals("node-3", loaded.getVotedFor());

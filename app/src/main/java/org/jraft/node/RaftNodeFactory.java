@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Objects;
 
 import org.jraft.core.RepeatingTask;
 import org.jraft.core.StateMachine;
@@ -51,17 +52,32 @@ public class RaftNodeFactory {
     // load or initialize persistent state (term, votedFor)
     PersistentState persistentState = PersistentState.load(dataDir);
 
+    // recover or create log storage
+    Path logDir = dataDir.resolve("log");
+    LogStore log = new FileLogStore(logDir);
+
     // create raft state and wire persistence hooks
     // initialize directly to avoid triggering persistence on load
+    // commitIndex starts at 0 - it will be set by leader via AppendEntries
     PersistentRaftState raftState = new PersistentRaftState(
       persistentState,
       persistentState.getCurrentTerm(),
       persistentState.getVotedFor()
     );
 
-    // recover or create log storage
-    Path logDir = dataDir.resolve("log");
-    LogStore log = new FileLogStore(logDir);
+    // note: commitIndex is volatile and starts at 0 on recovery
+    // however, we conservatively replay all log entries to the state machine
+    // this provides better recovery UX and is safe if operations are idempotent
+    if (stateMachine != null && log.lastIndex() > 0) {
+      for (long i = 1; i <= log.lastIndex(); i++) {
+        var entry = log.entryAt(i);
+        if (entry != null) {
+          stateMachine.apply(entry);
+          raftState.setCommitIndex(i);
+          raftState.setLastApplied(i);
+        }
+      }
+    }
 
     // create timer implementations
     ElectionTimer electionTimer = new ExecutorElectionTimer("raft-election-" + nodeId);
@@ -90,13 +106,16 @@ public class RaftNodeFactory {
       // initialize fields directly without triggering persistence
       this.currentTerm = initialTerm;
       this.votedFor = initialVotedFor;
+      // commitIndex starts at 0 (volatile state, not persisted)
     }
 
     @Override
     public void setCurrentTerm(long term) {
+      if (this.currentTerm == term) return;
+
       super.setCurrentTerm(term);
       try {
-        persistentState.save(term, getVotedFor());
+        persistentState.save(getCurrentTerm(), getVotedFor());
       } catch (IOException e) {
         throw new RuntimeException("failed to persist term change", e);
       }
@@ -104,19 +123,26 @@ public class RaftNodeFactory {
 
     @Override
     public void setVotedFor(String votedFor) {
+      if (Objects.equals(this.votedFor, votedFor)) return;
+
       super.setVotedFor(votedFor);
       try {
-        persistentState.save(getCurrentTerm(), votedFor);
+        persistentState.save(getCurrentTerm(), getVotedFor());
       } catch (IOException e) {
         throw new RuntimeException("failed to persist vote change", e);
       }
     }
 
+    // commitIndex is volatile state - not persisted
+    // it will be reconstructed from leader's AppendEntries messages
+
     @Override
     public void clearVote() {
+      if (this.votedFor == null) return;
+
       super.clearVote();
       try {
-        persistentState.save(getCurrentTerm(), null);
+        persistentState.save(getCurrentTerm(), getVotedFor());
       } catch (IOException e) {
         throw new RuntimeException("failed to persist vote clear", e);
       }

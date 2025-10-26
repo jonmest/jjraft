@@ -1,9 +1,11 @@
 package org.jraft.node;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
@@ -76,6 +78,54 @@ public class PersistenceIntegrationTest {
     assertEquals(1, node2.getRaftState().getCurrentTerm());
     assertEquals("n1", node2.getRaftState().getVotedFor());
     assertEquals(RaftState.Role.FOLLOWER, node2.getRaftState().getRole()); // always start as follower
+  }
+
+  @Test
+  void testStateMachineReplayOnRecovery() throws IOException {
+    String nodeId = "n1";
+    List<String> peers = List.of("n2", "n3");
+    Path dataDir = tempDir.resolve("node1");
+
+    FakeTransport transport1 = new FakeTransport();
+    KvStateMachine kv1 = new KvStateMachine();
+    RaftNode node1 = RaftNodeFactory.create(
+      nodeId,
+      peers,
+      dataDir,
+      kv1,
+      transport1
+    );
+
+    node1.getRaftState().setCurrentTerm(1);
+    node1.getRaftState().becomeLeader();
+    node1.getRaftState().setLeader(nodeId);
+    node1.nextIndex.put("n2", 1L);
+    node1.nextIndex.put("n3", 1L);
+
+    byte[] cmd = makeCommand("client-1", 1, "key", "value");
+    node1.propose(cmd);
+
+    node1.getRaftState().setCommitIndex(1);
+    kv1.apply(node1.getLog().entryAt(1));
+    node1.getRaftState().setLastApplied(1);
+
+    assertArrayEquals("value".getBytes(StandardCharsets.UTF_8), kv1.get("key"));
+
+    node1 = null;
+    transport1 = null;
+
+    FakeTransport transport2 = new FakeTransport();
+    KvStateMachine kv2 = new KvStateMachine();
+    RaftNode node2 = RaftNodeFactory.create(
+      nodeId,
+      peers,
+      dataDir,
+      kv2,
+      transport2
+    );
+
+    assertEquals(1, node2.getRaftState().getCommitIndex());
+    assertArrayEquals("value".getBytes(StandardCharsets.UTF_8), kv2.get("key"));
   }
 
   /**

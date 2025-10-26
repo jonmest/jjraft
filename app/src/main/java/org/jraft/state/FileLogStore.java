@@ -229,7 +229,6 @@ public class FileLogStore implements LogStore {
     }
   }
 
-  // --- private helper methods ---
 
   /**
    * recover state from existing segment files on disk
@@ -288,8 +287,10 @@ public class FileLogStore implements LogStore {
 
           // successfully read entry - add to index
           index.put(entry.getIndex(), new FileLocation(segNum, currentOffset));
-          lastIndex = entry.getIndex();
-          lastTerm = entry.getTerm();
+          if (entry.getIndex() >= lastIndex) {
+            lastIndex = entry.getIndex();
+            lastTerm = entry.getTerm();
+          }
 
           currentOffset += 4 + length;
         }
@@ -430,18 +431,15 @@ public class FileLogStore implements LogStore {
    */
   private List<Path> listSegmentsSorted() throws IOException {
     if (!Files.exists(logDir)) return List.of();
-    System.out.println("logDir = " + logDir.toAbsolutePath());
-    System.out.println("Exists: " + Files.exists(logDir));
-    System.out.println("Is directory: " + Files.isDirectory(logDir));
-
-
-    var out = Files.list(logDir).collect(Collectors.toList());;
-      // .filter(p -> p.getFileName().toString().startsWith("wal-"))
-      // .filter(p -> p.getFileName().toString().endsWith(".log"))
-      // .sorted()
-      // .collect(Collectors.toList());
-  
-    return out;
+    try (var stream = Files.list(logDir)) {
+      return stream
+        .filter(p -> {
+          String name = p.getFileName().toString();
+          return name.startsWith("wal-") && name.endsWith(".log");
+        })
+        .sorted((a, b) -> Integer.compare(extractSegmentNumber(a), extractSegmentNumber(b)))
+        .collect(Collectors.toList());
+    }
   }
 
   /**

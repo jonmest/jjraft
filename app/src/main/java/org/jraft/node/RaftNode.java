@@ -90,6 +90,9 @@ public class RaftNode {
     for (String peer : peers) {
       net.requestVote(peer, request, resp -> onRequestVoteResponse(peer, resp));
     }
+
+    // Reset election timer so if this election fails (split vote), we'll try again
+    resetElectionTimer();
   }
 
   private int majority() { return (peers.size() + 1) / 2 + 1;}

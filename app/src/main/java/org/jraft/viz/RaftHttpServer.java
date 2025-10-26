@@ -6,6 +6,9 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Base64;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -35,11 +38,19 @@ public class RaftHttpServer {
 
   private final HttpServer server;
   private final RaftVisualizer visualizer;
+  private final Object transport;  // VisualizerDemo.InMemoryTransport
   private final Gson gson;
+  private final ScheduledExecutorService scheduler;
 
-  public RaftHttpServer(int port, RaftVisualizer visualizer) throws IOException {
+  public RaftHttpServer(int port, RaftVisualizer visualizer, Object transport) throws IOException {
     this.visualizer = visualizer;
+    this.transport = transport;
     this.gson = new GsonBuilder().setPrettyPrinting().create();
+    this.scheduler = Executors.newScheduledThreadPool(1, r -> {
+      Thread t = new Thread(r, "auto-recovery-scheduler");
+      t.setDaemon(true);
+      return t;
+    });
     this.server = HttpServer.create(new InetSocketAddress(port), 0);
 
     // serve static resources
@@ -49,6 +60,7 @@ public class RaftHttpServer {
     server.createContext("/api/cluster", this::handleClusterState);
     server.createContext("/api/kv", this::handleKvState);
     server.createContext("/api/commands", this::handleCommands);
+    server.createContext("/api/nodes", this::handleNodeControl);
 
     server.setExecutor(null); // use default executor
   }
@@ -135,6 +147,12 @@ public class RaftHttpServer {
     KvStateResponse response = new KvStateResponse();
     response.stores = new java.util.ArrayList<>();
 
+    // find the highest term among all nodes to identify the real leader
+    long maxTerm = visualizer.getNodes().values().stream()
+      .mapToLong(n -> n.getRaftState().getCurrentTerm())
+      .max()
+      .orElse(0);
+
     for (Map.Entry<String, RaftNode> entry : visualizer.getNodes().entrySet()) {
       String nodeId = entry.getKey();
       RaftNode node = entry.getValue();
@@ -145,7 +163,9 @@ public class RaftHttpServer {
 
         NodeKvState nodeState = new NodeKvState();
         nodeState.nodeId = nodeId;
-        nodeState.isLeader = node.getRaftState().getRole() == org.jraft.state.RaftState.Role.LEADER;
+        // only mark as leader if it's a leader at the highest term (not a stale leader)
+        nodeState.isLeader = node.getRaftState().getRole() == org.jraft.state.RaftState.Role.LEADER
+                           && node.getRaftState().getCurrentTerm() == maxTerm;
         nodeState.entries = new java.util.ArrayList<>();
 
         // convert byte[] values to base64 strings for JSON
@@ -190,10 +210,10 @@ public class RaftHttpServer {
     String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
     CommandRequest request = gson.fromJson(body, CommandRequest.class);
 
-    // find the leader
+    // find the leader with the highest term (handles split brain situations)
     RaftNode leader = visualizer.getNodes().values().stream()
       .filter(n -> n.getRaftState().getRole() == org.jraft.state.RaftState.Role.LEADER)
-      .findFirst()
+      .max((a, b) -> Long.compare(a.getRaftState().getCurrentTerm(), b.getRaftState().getCurrentTerm()))
       .orElse(null);
 
     CommandResponse response = new CommandResponse();
@@ -239,6 +259,65 @@ public class RaftHttpServer {
         response.success = false;
         response.error = e.getMessage();
       }
+    }
+
+    sendJsonResponse(exchange, response);
+  }
+
+  /**
+   * handle node control operations (kill/revive)
+   */
+  private void handleNodeControl(HttpExchange exchange) throws IOException {
+    if (!exchange.getRequestMethod().equals("POST")) {
+      exchange.sendResponseHeaders(405, -1);
+      return;
+    }
+
+    // read request body
+    String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+    NodeControlRequest request = gson.fromJson(body, NodeControlRequest.class);
+
+    NodeControlResponse response = new NodeControlResponse();
+
+    if ("kill-leader".equals(request.action)) {
+      // find the leader with highest term (handles split brain situations)
+      var leaderEntry = visualizer.getNodes().entrySet().stream()
+        .filter(e -> e.getValue().getRaftState().getRole() == org.jraft.state.RaftState.Role.LEADER)
+        .max((a, b) -> Long.compare(a.getValue().getRaftState().getCurrentTerm(), b.getValue().getRaftState().getCurrentTerm()));
+
+      if (leaderEntry.isPresent()) {
+        String leaderId = leaderEntry.get().getKey();
+
+        // partition the node in the transport (simulate network failure)
+        try {
+          transport.getClass().getMethod("partitionNode", String.class).invoke(transport, leaderId);
+        } catch (Exception e) {
+          System.err.println("Failed to partition node: " + e.getMessage());
+        }
+
+        // schedule automatic recovery after 10 seconds
+        scheduler.schedule(() -> {
+          try {
+            System.out.println("🔄 Auto-recovering node " + leaderId + " after 10 seconds of partition");
+            transport.getClass().getMethod("unpartitionNode", String.class).invoke(transport, leaderId);
+          } catch (Exception e) {
+            System.err.println("Failed to unpartition node: " + e.getMessage());
+          }
+        }, 10, TimeUnit.SECONDS);
+
+        // note: we keep the node in the visualizer so it shows as offline/partitioned
+        // this way the cluster topology remains correct for quorum calculations
+
+        response.success = true;
+        response.message = "Leader " + leaderId + " killed (network partitioned, will auto-recover in 10s)";
+        response.killedNode = leaderId;
+      } else {
+        response.success = false;
+        response.error = "No leader found";
+      }
+    } else {
+      response.success = false;
+      response.error = "Unknown action: " + request.action;
     }
 
     sendJsonResponse(exchange, response);
@@ -389,5 +468,17 @@ public class RaftHttpServer {
     long index;
     String message;
     String error;
+  }
+
+  // Node control API request/response classes
+  private static class NodeControlRequest {
+    String action;  // "kill-leader"
+  }
+
+  private static class NodeControlResponse {
+    boolean success;
+    String message;
+    String error;
+    String killedNode;
   }
 }

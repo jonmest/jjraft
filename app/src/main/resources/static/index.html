@@ -589,19 +589,65 @@
             font-weight: 600;
             color: #333;
         }
+
+        /* kill leader button */
+        .kill-leader-btn {
+            padding: 10px 20px;
+            background: #f44336;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            box-shadow: 0 2px 4px rgba(244, 67, 54, 0.3);
+        }
+
+        .kill-leader-btn:hover {
+            background: #d32f2f;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(244, 67, 54, 0.4);
+        }
+
+        .kill-leader-btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+
+        .node-card.offline {
+            opacity: 0.5;
+            border: 2px dashed #999;
+        }
+
+        .node-card.offline .node-header {
+            background: #999;
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <header>
-            <h1>Raft Cluster Visualization</h1>
-            <div class="cluster-info">
-                <span>
-                    <div class="status-indicator"></div>
-                    <span>Term <strong id="current-term">0</strong></span>
-                </span>
-                <span>Leader: <strong id="current-leader">none</strong></span>
-                <span>Nodes: <strong id="node-count">0</strong></span>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h1>Raft Cluster Visualization</h1>
+                    <div class="cluster-info">
+                        <span>
+                            <div class="status-indicator"></div>
+                            <span>Term <strong id="current-term">0</strong></span>
+                        </span>
+                        <span>Leader: <strong id="current-leader">none</strong></span>
+                        <span>Nodes: <strong id="node-count">0</strong></span>
+                    </div>
+                </div>
+                <div>
+                    <button id="kill-leader-btn" class="kill-leader-btn">
+                        ⚡ Kill Leader
+                    </button>
+                    <div id="kill-leader-message" style="margin-top: 8px; font-size: 12px;"></div>
+                </div>
             </div>
         </header>
 
@@ -705,22 +751,34 @@
             document.getElementById('current-leader').textContent = data.leader || 'none';
             document.getElementById('node-count').textContent = data.nodes.length;
 
+            // Find the highest term among all nodes
+            const maxTerm = Math.max(...data.nodes.map(n => n.term));
+
             // Update nodes
             const container = document.getElementById('nodes-container');
             container.innerHTML = '';
 
             data.nodes.forEach(node => {
-                const card = createNodeCard(node);
+                const card = createNodeCard(node, maxTerm);
                 container.appendChild(card);
             });
 
             // Update topology
-            updateTopology(data);
+            updateTopology(data, maxTerm);
         }
 
-        function createNodeCard(node) {
+        function createNodeCard(node, maxTerm) {
             const card = document.createElement('div');
-            card.className = `node-card ${node.role.toLowerCase()}`;
+
+            // Check if this is a stale leader (leader at lower term than maxTerm)
+            const isStaleLeader = node.role === 'LEADER' && node.term < maxTerm;
+
+            // Apply appropriate styling
+            if (isStaleLeader) {
+                card.className = 'node-card offline';
+            } else {
+                card.className = `node-card ${node.role.toLowerCase()}`;
+            }
 
             const roleClass = node.role.toLowerCase();
 
@@ -746,10 +804,14 @@
                 ? (node.log.commitIndex / node.log.lastIndex * 100)
                 : 0;
 
+            // Determine display role
+            const displayRole = isStaleLeader ? 'PARTITIONED' : node.role;
+            const badgeClass = isStaleLeader ? 'follower' : roleClass;
+
             card.innerHTML = `
                 <div class="node-header">
-                    <div class="node-name">${node.id}</div>
-                    <div class="role-badge ${roleClass}">${node.role}</div>
+                    <div class="node-name">${node.id} ${isStaleLeader ? '(stale term ' + node.term + ')' : ''}</div>
+                    <div class="role-badge ${badgeClass}">${displayRole}</div>
                 </div>
                 <div class="node-stats">
                     <div class="stat">
@@ -805,12 +867,14 @@
             return card;
         }
 
-        function updateTopology(data) {
+        function updateTopology(data, maxTerm) {
             const container = document.getElementById('topology-diagram');
             container.innerHTML = '';
 
-            const leaderNode = data.nodes.find(n => n.role === 'LEADER');
-            const followerNodes = data.nodes.filter(n => n.role === 'FOLLOWER');
+            // Only show the leader at the highest term as the real leader
+            const leaderNode = data.nodes.find(n => n.role === 'LEADER' && n.term === maxTerm);
+            // Followers include actual followers and stale leaders
+            const followerNodes = data.nodes.filter(n => n.role === 'FOLLOWER' || (n.role === 'LEADER' && n.term < maxTerm));
 
             if (leaderNode) {
                 const leaderDiv = document.createElement('div');
@@ -1111,6 +1175,48 @@
                 valueGroup.style.opacity = '1';
                 valueInput.required = true;
                 valueInput.disabled = false;
+            }
+        });
+
+        // Kill leader button
+        document.getElementById('kill-leader-btn').addEventListener('click', async () => {
+            const btn = document.getElementById('kill-leader-btn');
+            const messageDiv = document.getElementById('kill-leader-message');
+
+            btn.disabled = true;
+            messageDiv.textContent = '';
+
+            try {
+                const response = await fetch('/api/nodes', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: 'kill-leader'
+                    })
+                });
+
+                const result = await response.json();
+
+                if (result.success) {
+                    messageDiv.style.color = '#4caf50';
+                    messageDiv.textContent = `✓ ${result.message}`;
+
+                    // Immediately refresh to show the change
+                    fetchClusterState();
+                } else {
+                    messageDiv.style.color = '#f44336';
+                    messageDiv.textContent = `✗ ${result.error}`;
+                }
+            } catch (error) {
+                messageDiv.style.color = '#f44336';
+                messageDiv.textContent = `✗ Error: ${error.message}`;
+            } finally {
+                setTimeout(() => {
+                    btn.disabled = false;
+                    messageDiv.textContent = '';
+                }, 2000);
             }
         });
 
